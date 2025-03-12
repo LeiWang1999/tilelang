@@ -728,7 +728,7 @@ private:
     PrimExpr current_condition = Bool(true);
     Array<Stmt> current_stmts;
     Array<PrimExpr> ordered_conditions;
-    Map<PrimExpr, Array<Stmt>> condition_to_stmts;
+    Array<Array<Stmt>> condition_to_stmts;
 
     for (const auto &stmt : stmts) {
       if (const auto *realize = stmt.as<BlockRealizeNode>()) {
@@ -755,21 +755,22 @@ private:
             // IfThenElse nodes with else case are treated individually
             if (!current_stmts.empty()) {
               ordered_conditions.push_back(current_condition);
-              condition_to_stmts.Set(current_condition, current_stmts);
+              condition_to_stmts.push_back(current_stmts);
               current_stmts = {};
             }
             current_condition = Bool(true);
             current_stmts.push_back(stmt);
           } else {
             // If we encounter a new condition
-            if (!if_then_else->condition.same_as(current_condition)) {
-              current_condition = if_then_else->condition;
+            if (!StructuralEqual()(if_then_else->condition,
+                                   current_condition)) {
               // Store the current group if it's not empty
               if (!current_stmts.empty()) {
                 ordered_conditions.push_back(current_condition);
-                condition_to_stmts.Set(current_condition, current_stmts);
+                condition_to_stmts.push_back(current_stmts);
                 current_stmts = {};
               }
+              current_condition = if_then_else->condition;
             }
             BlockRealize new_realize = Downcast<BlockRealize>(stmt);
             new_realize.CopyOnWrite()->block.CopyOnWrite()->body =
@@ -780,7 +781,7 @@ private:
         } else {
           if (!current_stmts.empty()) {
             ordered_conditions.push_back(current_condition);
-            condition_to_stmts.Set(current_condition, current_stmts);
+            condition_to_stmts.push_back(current_stmts);
             current_stmts = {};
           }
           current_condition = Bool(true);
@@ -790,7 +791,7 @@ private:
         // Non-BlockRealize statements are treated individually
         if (!current_stmts.empty()) {
           ordered_conditions.push_back(current_condition);
-          condition_to_stmts.Set(current_condition, current_stmts);
+          condition_to_stmts.push_back(current_stmts);
           current_stmts = {};
         }
         current_condition = Bool(true);
@@ -801,13 +802,13 @@ private:
     // Add the last group if not empty
     if (!current_stmts.empty()) {
       ordered_conditions.push_back(current_condition);
-      condition_to_stmts.Set(current_condition, current_stmts);
+      condition_to_stmts.push_back(current_stmts);
     }
 
     // Build the final statement sequence with proper conditionals
     Array<Stmt> final_stmts;
-    for (const auto &condition : ordered_conditions) {
-      Array<Stmt> condition_stmts = condition_to_stmts[condition];
+    for (auto i = 0; i < ordered_conditions.size(); i++) {
+      Array<Stmt> condition_stmts = condition_to_stmts[i];
       if (condition_stmts.empty())
         continue;
 
@@ -820,8 +821,9 @@ private:
       }
 
       // If condition is not trivially true, wrap in if-then-else
-      if (!is_one(condition) && !analyzer_.CanProve(condition == true)) {
-        stmt_block = IfThenElse(condition, stmt_block);
+      if (!is_one(ordered_conditions[i]) &&
+          !analyzer_.CanProve(ordered_conditions[i] == true)) {
+        stmt_block = IfThenElse(ordered_conditions[i], stmt_block);
       }
 
       final_stmts.push_back(stmt_block);
