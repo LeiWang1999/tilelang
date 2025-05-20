@@ -338,7 +338,6 @@ if __name__ == "__main__":
     def run():
         O_ref.backward(dO, retain_graph=True)
 
-
     def run1():
         O.backward(dO, retain_graph=True)
 

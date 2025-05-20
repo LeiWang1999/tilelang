@@ -100,7 +100,6 @@ std::string ReduceOp::MakeCodegenReducer() const {
   }
 }
 
-
 Stmt ReduceOp::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
   ICHECK(this->src.scope() == "local.fragment" &&
          this->dst.scope() == "local.fragment")
@@ -114,12 +113,14 @@ Stmt ReduceOp::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
   size_t dst_dim = dst_layout->InputDim();
   // check the dst dim is 1
   auto last_dst_size = dst_layout->InputShape().back();
-  
-  bool valid_reduce = (src_dim == dst_dim + 1) || (
-    src_dim == dst_dim && dst_dim == 1 && is_one(last_dst_size)
-  );
 
-  ICHECK(valid_reduce) << "\n" << "src_layout is " << src_layout->DebugOutput() << "\n" << "dst_layout is " << dst_layout->DebugOutput();
+  bool valid_reduce =
+      (src_dim == dst_dim + 1) ||
+      (src_dim == dst_dim && dst_dim == 1 && is_one(last_dst_size));
+
+  ICHECK(valid_reduce) << "\n"
+                       << "src_layout is " << src_layout->DebugOutput() << "\n"
+                       << "dst_layout is " << dst_layout->DebugOutput();
   Array<IterVar> dst_vars;
   for (size_t i = 0; i < dst_layout->InputDim(); i++) {
     Var var = Var(std::string{char('i' + i)});
@@ -131,8 +132,8 @@ Stmt ReduceOp::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
     src_vars = dst_vars;
   }
   src_vars.insert(src_vars.begin() + this->dim,
-              {Range(0, src_layout->InputShape()[this->dim]), Var("rv"),
-                IterVarType::kDataPar});
+                  {Range(0, src_layout->InputShape()[this->dim]), Var("rv"),
+                   IterVarType::kDataPar});
   Array<PrimExpr> src_indices = src_layout->Forward(
       src_vars.Map([](const auto &iv) { return PrimExpr(iv->var); }));
   Array<PrimExpr> dst_indices = dst_layout->Forward(
