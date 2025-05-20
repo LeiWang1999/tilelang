@@ -139,12 +139,7 @@ def flashattn_bwd_postprocess(batch, heads, seq_len, dim):
     return flash_bwd_post
 
 
-@tilelang.jit(
-    out_idx=[-3, -2, -1],
-    pass_configs={
-        tilelang.PassConfigKey.TL_DISABLE_TMA_LOWER: True,
-        tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
-    })
+@tilelang.jit(out_idx=[-3, -2, -1],)
 def flashattn_bwd(batch, heads, seq_len, dim, is_casual, block_M, block_N):
     sm_scale = (1.0 / dim)**0.5
     scale = (1.0 / dim)**0.5 * 1.44269504  # log2(e)

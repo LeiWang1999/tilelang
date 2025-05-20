@@ -137,7 +137,7 @@ public:
     if (it != alloc_info_.end() && it->second.alloc) {
       ICHECK_LT(it->second.level, scope_.size());
       if (IsAppropriateSharedMemory(GetRef<Var>(buf))) {
-        scope_[it->second.level].touched.push_back(buf);
+        scope_[scope_.size() - 1].touched.push_back(buf);
       }
     }
     StmtEntry e = scope_.back();
@@ -169,7 +169,7 @@ public:
       ICHECK_LT(it->second.level, scope_.size())
           << "Load memory in places other than store.";
       if (IsAppropriateSharedMemory(GetRef<Var>(buf))) {
-        scope_[it->second.level].touched.push_back(buf);
+        scope_[scope_.size() - 1].touched.push_back(buf);
       }
     }
   }
@@ -180,7 +180,7 @@ public:
     if (it != alloc_info_.end() && it->second.alloc) {
       ICHECK_LT(it->second.level, scope_.size());
       if (IsAppropriateSharedMemory(GetRef<Var>(buf))) {
-        scope_[it->second.level].touched.push_back(buf);
+        scope_[scope_.size() - 1].touched.push_back(buf);
       }
     }
   }
