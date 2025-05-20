@@ -100,25 +100,39 @@ std::string ReduceOp::MakeCodegenReducer() const {
   }
 }
 
+
 Stmt ReduceOp::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
   ICHECK(this->src.scope() == "local.fragment" &&
          this->dst.scope() == "local.fragment")
       << "Reduce for shared memory not implemented.";
   auto src_buffer = T.buffer_remap[this->src];
   auto dst_buffer = T.buffer_remap[this->dst];
+
   Fragment src_layout = T.layout_map[this->src].as<Fragment>().value();
   Fragment dst_layout = T.layout_map[this->dst].as<Fragment>().value();
-  ICHECK(src_layout->InputDim() == dst_layout->InputDim() + 1);
+  size_t src_dim = src_layout->InputDim();
+  size_t dst_dim = dst_layout->InputDim();
+  // check the dst dim is 1
+  auto last_dst_size = dst_layout->InputShape().back();
+  
+  bool valid_reduce = (src_dim == dst_dim + 1) || (
+    src_dim == dst_dim && dst_dim == 1 && is_one(last_dst_size)
+  );
+
+  ICHECK(valid_reduce) << "\n" << "src_layout is " << src_layout->DebugOutput() << "\n" << "dst_layout is " << dst_layout->DebugOutput();
   Array<IterVar> dst_vars;
   for (size_t i = 0; i < dst_layout->InputDim(); i++) {
     Var var = Var(std::string{char('i' + i)});
     dst_vars.push_back(IterVar(Range(0, dst_layout->InputShape()[i]), var,
                                IterVarType::kDataPar));
   }
-  Array<IterVar> src_vars = dst_vars;
+  Array<IterVar> src_vars;
+  if (src_dim == dst_dim + 1) {
+    src_vars = dst_vars;
+  }
   src_vars.insert(src_vars.begin() + this->dim,
-                  {Range(0, src_layout->InputShape()[this->dim]), Var("rv"),
-                   IterVarType::kDataPar});
+              {Range(0, src_layout->InputShape()[this->dim]), Var("rv"),
+                IterVarType::kDataPar});
   Array<PrimExpr> src_indices = src_layout->Forward(
       src_vars.Map([](const auto &iv) { return PrimExpr(iv->var); }));
   Array<PrimExpr> dst_indices = dst_layout->Forward(

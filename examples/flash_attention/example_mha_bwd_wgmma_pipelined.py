@@ -1,15 +1,14 @@
-# Copyright (c) Tile-AI Corporation.
+# Copyright (`c`) Tile-AI Corporation.
 # Licensed under the MIT License.
 
 import torch
 import torch.nn.functional as F
 import tilelang
-from tilelang import cached
-from tilelang.autotuner import *
 import tilelang.language as T
 import argparse
 
 
+@tilelang.jit(out_idx=[3, 4])
 def flashattn_fwd(batch, heads, seq_len, dim, is_casual, block_M, block_N):
     scale = (1.0 / dim)**0.5 * 1.44269504  # log2(e)
     shape = [batch, seq_len, heads, dim]
@@ -82,6 +81,7 @@ def flashattn_fwd(batch, heads, seq_len, dim, is_casual, block_M, block_N):
     return flash_fwd
 
 
+@tilelang.jit(out_idx=[2])
 def flashattn_bwd_preprocess(batch, heads, seq_len, dim):
     dtype = "float16"
     accum_dtype = "float"
@@ -117,6 +117,7 @@ def make_dq_layout(dQ):
                     lambda b, l, h, d: [b, l // 8, h, d // 8, (d % 2), 4 * (l % 8) + (d % 8) // 2])
 
 
+@tilelang.jit(out_idx=[1])
 def flashattn_bwd_postprocess(batch, heads, seq_len, dim):
     dtype = "float16"
     accum_dtype = "float"
@@ -138,6 +139,12 @@ def flashattn_bwd_postprocess(batch, heads, seq_len, dim):
     return flash_bwd_post
 
 
+@tilelang.jit(
+    out_idx=[-3, -2, -1],
+    pass_configs={
+        tilelang.PassConfigKey.TL_DISABLE_TMA_LOWER: True,
+        tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
+    })
 def flashattn_bwd(batch, heads, seq_len, dim, is_casual, block_M, block_N):
     sm_scale = (1.0 / dim)**0.5
     scale = (1.0 / dim)**0.5 * 1.44269504  # log2(e)
@@ -247,8 +254,8 @@ class _attention(torch.autograd.Function):
         BATCH, N_CTX, H, D_HEAD = q.shape
         block_M = 64
         block_N = 64 if D_HEAD <= 128 else 32
-        mod = cached(flashattn_fwd, [3, 4], BATCH, H, N_CTX, D_HEAD, causal, block_M, block_N)
-        o, lse = mod(q, k, v)
+        kernel = flashattn_fwd(BATCH, H, N_CTX, D_HEAD, causal, block_M, block_N)
+        o, lse = kernel(q, k, v)
         ctx.save_for_backward(q, k, v, o, lse)
         ctx.causal = causal
         return o
@@ -265,13 +272,12 @@ class _attention(torch.autograd.Function):
         do, q, k, v, o = [maybe_contiguous(x) for x in (do, q, k, v, o)]
         block_M = 128
         block_N = 128 if D_HEAD <= 64 else 32
-        mod_prep = cached(flashattn_bwd_preprocess, [2], BATCH, H, N_CTX, D_HEAD)
-        mod_post = cached(flashattn_bwd_postprocess, [1], BATCH, H, N_CTX, D_HEAD)
-        delta = mod_prep(o, do)
-        mod = cached(flashattn_bwd, [6, 7, 8], BATCH, H, N_CTX, D_HEAD, ctx.causal, block_M,
-                     block_N)
-        dq, dk, dv = mod(q, k, v, do, lse, delta)
-        dq = mod_post(dq)
+        kernel_prep = flashattn_bwd_preprocess(BATCH, H, N_CTX, D_HEAD)
+        kernel_post = flashattn_bwd_postprocess(BATCH, H, N_CTX, D_HEAD)
+        delta = kernel_prep(o, do)
+        kernel = flashattn_bwd(BATCH, H, N_CTX, D_HEAD, ctx.causal, block_M, block_N)
+        dq, dk, dv = kernel(q, k, v, do, lse, delta)
+        dq = kernel_post(dq)
         return dq, dk, dv, None
 
 
@@ -294,9 +300,9 @@ def ref_program(Q, K, V, is_causal):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch', type=int, default=8, help='Batch size')
-    parser.add_argument('--h', type=int, default=32, help='Number of heads')
-    parser.add_argument('--n_ctx', type=int, default=1024, help='Context size')
+    parser.add_argument('--batch', type=int, default=1, help='Batch size')
+    parser.add_argument('--h', type=int, default=128, help='Number of heads')
+    parser.add_argument('--n_ctx', type=int, default=4096, help='Context size')
     parser.add_argument('--d_head', type=int, default=64, help='Head dimension')
     parser.add_argument('--casual', type=bool, default=False, help='Casual flag')
     args = parser.parse_args()
@@ -331,6 +337,7 @@ if __name__ == "__main__":
 
     def run():
         O_ref.backward(dO, retain_graph=True)
+
 
     def run1():
         O.backward(dO, retain_graph=True)
