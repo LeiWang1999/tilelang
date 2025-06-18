@@ -364,7 +364,8 @@ class TLCUDASourceWrapper(object):
                 num_bytes = persisting_l2_cache_max_size
 
             init_l2_persistent_map += L2_PERSISTENT_MAP_INIT_FUNC.format(
-                buffer_name, float(hit_ratio), size_in_bytes, num_bytes)
+                buffer_name, pythonic_expr(hit_ratio), pythonic_expr(size_in_bytes),
+                pythonic_expr(num_bytes))
 
         return init_l2_persistent_map
 

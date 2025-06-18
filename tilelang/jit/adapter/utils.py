@@ -113,7 +113,7 @@ def pythonic_expr(expr: tvm.tir.Expr) -> str:
     def _pythonic_visitor(node):
         if isinstance(node, tvm.tir.Var):
             s = node.name
-        elif isinstance(node, tvm.tir.IntImm):
+        elif isinstance(node, (tvm.tir.IntImm, tvm.tir.FloatImm)):
             # Integer constant: use value directly (ignore type)
             s = str(node.value)
         elif isinstance(node, tvm.tir.Cast):
