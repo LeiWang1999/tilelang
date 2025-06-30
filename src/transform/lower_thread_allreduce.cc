@@ -383,9 +383,9 @@ private:
       PrimExpr mask = Call(mask_dtype, builtin::tvm_warp_activemask(), {});
 
       if (reduce_extent <= warp_size_) {
-        std::tie(reduce_results, new_alloc_bufs) =
-            MakeWarpAllreduce(values, types, combiner, reduce_index,
-                              reduce_extent, group_index, mask, std::nullopt, &seq);
+        std::tie(reduce_results, new_alloc_bufs) = MakeWarpAllreduce(
+            values, types, combiner, reduce_index, reduce_extent, group_index,
+            mask, std::nullopt, &seq);
 
         // Broadcast the reduction result from lane 0 to all other lanes.
         // This avoids to emit predicated stores, as all threads are
@@ -937,7 +937,8 @@ Pass LowerThreadAllreduce() {
     n->body = thread_all_reduce(n->body);
     return f;
   };
-  return tvm::tir::transform::CreatePrimFuncPass(pass_func, 0, "tl.LowerThreadAllreduce", {});
+  return tvm::tir::transform::CreatePrimFuncPass(pass_func, 0,
+                                                 "tl.LowerThreadAllreduce", {});
 }
 
 TVM_FFI_REGISTER_GLOBAL("tl.transform.LowerThreadAllreduce")

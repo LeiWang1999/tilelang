@@ -6,8 +6,8 @@
  * \brief Plan the cluster for GPU(sm90+) blocks
  */
 
-#include <tvm/ffi/function.h>
 #include <tvm/arith/analyzer.h>
+#include <tvm/ffi/function.h>
 #include <tvm/tir/analysis.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>

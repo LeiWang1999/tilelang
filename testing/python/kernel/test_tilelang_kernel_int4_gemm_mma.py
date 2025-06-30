@@ -19,6 +19,7 @@ from tilelang.transform import simplify_prim_func
 tilelang.testing.set_random_seed(42)
 tilelang.disable_cache()
 
+
 # @simplify_prim_func
 def tl_matmul(
     M,
@@ -167,9 +168,12 @@ def tl_matmul(
 
 def assert_tl_matmul_correctness(M, N, K, in_dtype, out_dtype, accum_dtype):
     matmul = tl_matmul(M, N, K, in_dtype, out_dtype, accum_dtype)
-    kernel = tilelang.compile(matmul, out_idx=[2], pass_configs={
-        tilelang.PassConfigKey.TL_DEBUG_MERGE_SHARED_MEMORY_ALLOCATIONS: True,
-    })
+    kernel = tilelang.compile(
+        matmul,
+        out_idx=[2],
+        pass_configs={
+            tilelang.PassConfigKey.TL_DEBUG_MERGE_SHARED_MEMORY_ALLOCATIONS: True,
+        })
     print(kernel.get_kernel_source())
     profiler = kernel.get_profiler()
 

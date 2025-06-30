@@ -100,11 +100,8 @@ def LowerHopperIntrin():
     fpass : tvm.transform.Pass
         The result pass
     """
-    return (
-        _ffi_api.LowerHopperIntrin()
-        if hasattr(_ffi_api, "LowerHopperIntrin")
-        else lambda f: f
-    )  # type: ignore
+    return (_ffi_api.LowerHopperIntrin() if hasattr(_ffi_api, "LowerHopperIntrin") else lambda f: f
+           )  # type: ignore
 
 
 def WarpSpecializedPipeline():
@@ -403,13 +400,3 @@ def StorageRewrite():
         The result pass
     """
     return _ffi_api.StorageRewrite()  # type: ignore
-
-
-def LowerL2Persistent():
-    """LowerL2Persistent"""
-    return _ffi_api.LowerL2Persistent()  # type: ignore
-
-
-def PersistThreadblock():
-    """PersistThreadblock"""
-    return _ffi_api.PersistThreadblock()  # type: ignore
