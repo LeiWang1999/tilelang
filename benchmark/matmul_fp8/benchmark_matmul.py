@@ -200,7 +200,7 @@ def matmul(M, N, K, with_roller):
         """
         # Use half-precision for input data to reduce memory bandwidth,
         # accumulate in float for better numerical accuracy
-        dtype = "e4m3_float8"
+        dtype = "float8_e4m3"
         accum_dtype = "float"
 
         @T.prim_func
