@@ -44,15 +44,32 @@ ReduceOp::ReduceOp(Array<PrimExpr> args, BufferMap vmap) {
 }
 
 PrimExpr ReduceOp::MakeInitValue() const {
+  auto dst_dtype = dst->dtype;
+  auto is_int = dst_dtype.is_int();
+  bool is_uint = dst_dtype.is_uint();
+  auto bits = dst_dtype.bits();
+
   switch (type) {
   case ReduceType::kSum:
     return make_zero(dst->dtype);
   case ReduceType::kAbsSum:
     return make_zero(dst->dtype);
   case ReduceType::kMax:
-    return make_const(dst->dtype, -INFINITY);
+    if (is_int) {
+      return make_const(dst->dtype, -(1 << (bits - 1)));
+    } else if (is_uint) {
+      return make_const(dst->dtype, 0);
+    } else {
+      return make_const(dst->dtype, -INFINITY);
+    }
   case ReduceType::kMin:
-    return make_const(dst->dtype, INFINITY);
+    if (is_int) {
+      return make_const(dst->dtype, (1 << (bits - 1)) - 1);
+    } else if (is_uint) {
+      return make_const(dst->dtype, (1 << bits) - 1);
+    } else {
+      return make_const(dst->dtype, INFINITY);
+    }
   case ReduceType::kAbsMax:
     return make_const(dst->dtype, 0);
   default:
@@ -211,8 +228,10 @@ Stmt ReduceOp::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
 
       bool has_arch = T.target->attrs.count("arch") > 0;
       if (has_arch && Downcast<String>(T.target->attrs["arch"]) == "sm_90") {
+        auto all_threads = T.thread_bounds->extent;
         ss << "tl::AllReduce<" << this->MakeCodegenReducer() << ", "
-           << reducing_threads << ", " << (*scale) << ">::run_hopper";
+           << reducing_threads << ", " << (*scale) << ", " << all_threads
+           << ">::run_hopper";
       } else {
         ss << "tl::AllReduce<" << this->MakeCodegenReducer() << ", "
            << reducing_threads << ", " << (*scale) << ">::run";
