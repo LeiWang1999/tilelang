@@ -9,6 +9,7 @@
 #include <tvm/tir/builtin.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
+#include <tvm/ffi/reflection/registry.h>
 
 #include "../op/builtin.h"
 #include "../op/bulk_copy.h"
@@ -61,8 +62,11 @@ tvm::transform::Pass PersistThreadblock() {
   return CreatePrimFuncPass(pass_func, 0, "tl.PersistThreadblock", {});
 }
 
-TVM_FFI_REGISTER_GLOBAL("tl.transform.PersistThreadblock")
-    .set_body_typed(PersistThreadblock);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef()
+    .def("tl.transform.PersistThreadblock", PersistThreadblock);
+});
 
 } // namespace tl
 } // namespace tvm

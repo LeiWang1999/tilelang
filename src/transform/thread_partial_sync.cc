@@ -10,6 +10,7 @@
 #include <tvm/tir/expr.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
+#include <tvm/ffi/reflection/registry.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -374,8 +375,11 @@ Pass TileLangThreadPartialSync(String storage_scope) {
   return CreatePrimFuncPass(pass_func, 0, "tl.ThreadPartialSync", {});
 }
 
-TVM_FFI_REGISTER_GLOBAL("tl.transform.ThreadPartialSync")
-    .set_body_typed(TileLangThreadPartialSync);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef()
+    .def("tl.transform.ThreadPartialSync", TileLangThreadPartialSync);
+});
 
 } // namespace transform
 } // namespace tl

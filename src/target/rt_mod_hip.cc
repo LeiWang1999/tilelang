@@ -3,6 +3,7 @@
 
 #if defined(__linux__)
 #include <sys/stat.h>
+#include <tvm/ffi/reflection/registry.h>
 #endif
 
 #include <hip/hip_runtime.h>
@@ -98,10 +99,12 @@ runtime::Module BuildTileLangHIPWithoutCompile(IRModule mod, Target target) {
   return ROCMModuleCreate("ptx", "fmt", ExtractFuncInfo(mod), code,
                           std::string());
 }
-TVM_FFI_REGISTER_GLOBAL("target.build.tilelang_hip")
-    .set_body_typed(BuildTileLangHIP);
-TVM_FFI_REGISTER_GLOBAL("target.build.tilelang_hip_without_compile")
-    .set_body_typed(BuildTileLangHIPWithoutCompile);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef()
+    .def("target.build.tilelang_hip", BuildTileLangHIP)
+    .def("target.build.tilelang_hip_without_compile", BuildTileLangHIPWithoutCompile);
+});
 
 } // namespace codegen
 } // namespace tvm

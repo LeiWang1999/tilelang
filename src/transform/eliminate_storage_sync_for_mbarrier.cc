@@ -13,6 +13,7 @@
 #include <tvm/tir/expr.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
+#include <tvm/ffi/reflection/registry.h>
 
 namespace tvm {
 namespace tl {
@@ -117,8 +118,11 @@ tvm::transform::Pass EliminateStorageSyncForMBarrier() {
                             {});
 }
 
-TVM_FFI_REGISTER_GLOBAL("tl.transform.EliminateStorageSyncForMBarrier")
-    .set_body_typed(EliminateStorageSyncForMBarrier);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef()
+    .def("tl.transform.EliminateStorageSyncForMBarrier", EliminateStorageSyncForMBarrier);
+});
 
 } // namespace transform
 } // namespace tl

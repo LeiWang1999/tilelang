@@ -27,6 +27,7 @@
 #include <tvm/tir/expr.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
+#include <tvm/ffi/reflection/registry.h>
 
 #include <unordered_set>
 
@@ -941,8 +942,11 @@ Pass LowerThreadAllreduce() {
                                                  "tl.LowerThreadAllreduce", {});
 }
 
-TVM_FFI_REGISTER_GLOBAL("tl.transform.LowerThreadAllreduce")
-    .set_body_typed(LowerThreadAllreduce);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef()
+    .def("tl.transform.LowerThreadAllreduce", LowerThreadAllreduce);
+});
 
 } // namespace transform
 } // namespace tl

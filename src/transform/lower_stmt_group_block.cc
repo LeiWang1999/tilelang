@@ -23,6 +23,7 @@
 
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
+#include <tvm/ffi/reflection/registry.h>
 
 namespace tvm {
 namespace tl {
@@ -65,8 +66,11 @@ Pass LowerStmtGroupBlock() {
   return CreatePrimFuncPass(pass_func, 0, "tl.LowerStmtGroupBlock", {});
 }
 
-TVM_FFI_REGISTER_GLOBAL("tl.transform.LowerStmtGroupBlock")
-    .set_body_typed(LowerStmtGroupBlock);
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef()
+    .def("tl.transform.LowerStmtGroupBlock", LowerStmtGroupBlock);
+});
 } // namespace transform
 
 } // namespace tl

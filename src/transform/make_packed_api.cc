@@ -30,6 +30,7 @@
 #include <tvm/tir/expr.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
+#include <tvm/ffi/reflection/registry.h>
 
 #include <utility>
 #include <vector>
@@ -512,8 +513,12 @@ tvm::transform::Pass MakePackedAPI() {
   return tvm::transform::CreateModulePass(pass_func, 0, "tl.MakePackedAPI", {});
 }
 
-TVM_FFI_REGISTER_GLOBAL("tl.transform.MakePackedAPI").set_body_typed([]() {
+TVM_FFI_STATIC_INIT_BLOCK({
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef()
+    .def("tl.transform.MakePackedAPI", []() {
   return MakePackedAPI();
+});
 });
 
 } // namespace tl
