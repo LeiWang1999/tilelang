@@ -72,8 +72,7 @@ runtime::Module BuildCPPHost(IRModule mod, Target target) {
 
 TVM_FFI_STATIC_INIT_BLOCK({
   namespace refl = tvm::ffi::reflection;
-  refl::GlobalDef()
-    .def("target.build.tilelang_cpp", BuildCPPHost);
+  refl::GlobalDef().def("target.build.tilelang_cpp", BuildCPPHost);
 });
 
 } // namespace codegen

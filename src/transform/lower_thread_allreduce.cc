@@ -22,12 +22,12 @@
  * \file lower_thread_allreduce.cc
  */
 #include <tvm/arith/analyzer.h>
+#include <tvm/ffi/reflection/registry.h>
 #include <tvm/target/target.h>
 #include <tvm/tir/builtin.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
-#include <tvm/ffi/reflection/registry.h>
 
 #include <unordered_set>
 
@@ -944,8 +944,8 @@ Pass LowerThreadAllreduce() {
 
 TVM_FFI_STATIC_INIT_BLOCK({
   namespace refl = tvm::ffi::reflection;
-  refl::GlobalDef()
-    .def("tl.transform.LowerThreadAllreduce", LowerThreadAllreduce);
+  refl::GlobalDef().def("tl.transform.LowerThreadAllreduce",
+                        LowerThreadAllreduce);
 });
 
 } // namespace transform

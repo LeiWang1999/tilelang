@@ -23,13 +23,13 @@
  */
 #include "tir/transforms/ir_utils.h"
 #include <tvm/ffi/function.h>
+#include <tvm/ffi/reflection/registry.h>
 #include <tvm/ir/transform.h>
 #include <tvm/target/target.h>
 #include <tvm/tir/builtin.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
-#include <tvm/ffi/reflection/registry.h>
 
 namespace tvm {
 namespace tl {
@@ -90,8 +90,8 @@ tvm::transform::Pass AnnotateDeviceRegions() {
 
 TVM_FFI_STATIC_INIT_BLOCK({
   namespace refl = tvm::ffi::reflection;
-  refl::GlobalDef()
-    .def("tl.transform.AnnotateDeviceRegions", AnnotateDeviceRegions);
+  refl::GlobalDef().def("tl.transform.AnnotateDeviceRegions",
+                        AnnotateDeviceRegions);
 });
 
 } // namespace tl

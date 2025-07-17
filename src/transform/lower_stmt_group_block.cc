@@ -21,9 +21,9 @@
  * \file lower_stmt_group_block.cc
  */
 
+#include <tvm/ffi/reflection/registry.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
-#include <tvm/ffi/reflection/registry.h>
 
 namespace tvm {
 namespace tl {
@@ -68,8 +68,8 @@ Pass LowerStmtGroupBlock() {
 
 TVM_FFI_STATIC_INIT_BLOCK({
   namespace refl = tvm::ffi::reflection;
-  refl::GlobalDef()
-    .def("tl.transform.LowerStmtGroupBlock", LowerStmtGroupBlock);
+  refl::GlobalDef().def("tl.transform.LowerStmtGroupBlock",
+                        LowerStmtGroupBlock);
 });
 } // namespace transform
 

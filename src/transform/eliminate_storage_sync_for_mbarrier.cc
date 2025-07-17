@@ -8,12 +8,12 @@
 #include "arith/ir_mutator_with_analyzer.h"
 #include "arith/ir_visitor_with_analyzer.h"
 #include <tvm/ffi/function.h>
+#include <tvm/ffi/reflection/registry.h>
 #include <tvm/tir/analysis.h>
 #include <tvm/tir/builtin.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
-#include <tvm/ffi/reflection/registry.h>
 
 namespace tvm {
 namespace tl {
@@ -120,8 +120,8 @@ tvm::transform::Pass EliminateStorageSyncForMBarrier() {
 
 TVM_FFI_STATIC_INIT_BLOCK({
   namespace refl = tvm::ffi::reflection;
-  refl::GlobalDef()
-    .def("tl.transform.EliminateStorageSyncForMBarrier", EliminateStorageSyncForMBarrier);
+  refl::GlobalDef().def("tl.transform.EliminateStorageSyncForMBarrier",
+                        EliminateStorageSyncForMBarrier);
 });
 
 } // namespace transform
