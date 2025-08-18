@@ -12,7 +12,7 @@ def get_configs():
     iter_params = dict(
         block_M=[64, 128, 256],
         block_N=[64, 128, 256],
-        block_K=[128],
+        block_K=[64, 128, 256],
         num_stages=[0, 2],
         threads=[128, 256, 512],
         split=[1, 2],
@@ -241,5 +241,5 @@ def main(m=256, n=256, k=256, fast_dequant=True, tune=False):
 
 
 if __name__ == "__main__":
-    main(256, 256, 256, True)
-    main(256, 256, 256, False)
+    main(256, 256, 256, True, True)
+    main(256, 256, 256, False, True)
