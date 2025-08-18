@@ -33,7 +33,7 @@ def get_configs():
     iter_params = dict(
         block_M=[64, 128, 256],
         block_N=[64, 128, 256],
-        block_K=[128],
+        block_K=[64, 128, 256],
         num_stages=[0, 2],
         threads=[128, 256, 512],
         split=[1, 2],
