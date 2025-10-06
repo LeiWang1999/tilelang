@@ -78,7 +78,11 @@ private:
   std::vector<std::pair<std::string, std::string>> _rules;
 };
 
-CodeGenTileLangHIP::CodeGenTileLangHIP() { restrict_keyword_ = "__restrict__"; }
+CodeGenTileLangHIP::CodeGenTileLangHIP() {
+  // disable restrict keyword as discussed in
+  // https://github.com/tile-ai/tilelang/issues/840 restrict_keyword_ =
+  // "__restrict__";
+}
 
 void CodeGenTileLangHIP::PrintFuncPrefix(std::ostream &os) {
   os << "extern \"C\" __global__ ";

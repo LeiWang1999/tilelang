@@ -200,7 +200,9 @@ std::string GetFP4Type(DataType type) {
 }
 
 CodeGenTileLangCUDA::CodeGenTileLangCUDA() {
-  restrict_keyword_ = "__restrict__";
+  // disable restrict keyword as discussed in
+  // https://github.com/tile-ai/tilelang/issues/840 restrict_keyword_ =
+  // "__restrict__";
   vid_global_barrier_state_ =
       name_supply_->FreshName(runtime::symbol::tvm_global_barrier_state);
   vid_global_barrier_expect_ = name_supply_->FreshName("__barrier_expect");
