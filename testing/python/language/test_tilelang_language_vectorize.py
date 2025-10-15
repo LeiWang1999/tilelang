@@ -45,7 +45,7 @@ def run_vectorize(N, M, stride_A, stride_B):
           stride_A % (vectorize_size * 2) == 0 and \
           stride_B % (vectorize_size * 2) == 0:
         vectorize_size *= 2
-    
+
     if vectorize_size == 8:
         assert "ulonglong4" in code
     elif vectorize_size == 4:
