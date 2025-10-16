@@ -5,13 +5,14 @@ import tilelang as tl
 import tilelang.language as T
 
 
+@tilelang.jit
 def vectorize_test(N, M, stride_A, stride_B):
     assert N % 128 == 0 and M % 128 == 0
 
     @T.prim_func
     def main(
-        A: T.StridedTensor[(N, M), (1, stride_A), "float32"],
-        B: T.StridedTensor[(N, M), (1, stride_B), "float32"],
+            A: T.StridedTensor[(N, M), (1, stride_A), "float32"],  # noqa: F821
+            B: T.StridedTensor[(N, M), (1, stride_B), "float32"],  # noqa: F821
     ):
         with T.Kernel(M // 128, threads=128) as (bx):
             tx = T.get_thread_binding(0)
@@ -26,8 +27,7 @@ def vectorize_test(N, M, stride_A, stride_B):
 def run_vectorize(N, M, stride_A, stride_B):
     assert stride_A >= N and stride_B >= N
 
-    program = vectorize_test(N, M, stride_A, stride_B)
-    jit_kernel = tl.compile(program, target="cuda", execution_backend="cython")
+    jit_kernel = vectorize_test(N, M, stride_A, stride_B)
 
     base_a = torch.randn(stride_A, M, device="cuda", dtype=torch.float32)
     base_b = torch.zeros(stride_B, M, device="cuda", dtype=torch.float32)
