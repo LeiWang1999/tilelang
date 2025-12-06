@@ -387,14 +387,6 @@ class JITImpl(Generic[_P, _KP, _T, _Ret]):
             key = (key_args_tuple, key_kwargs_tuple, tuned_key_kwargs_tuple)
             return key
 
-    def convert_kernel_args(self, *args: _P.args, **kwargs: _P.kwargs):
-        if isinstance(self.func, PrimFuncCreater):
-            tune_params = kwargs.pop('__tune_params', {})
-            return self.func.func_annot.convert_to_kernel_args(*args, **kwargs, **tune_params)
-        else:
-            raise NotImplementedError(
-                "convert_arg_to_kernel_args is only implemented for PrimFuncCreater.")
-
     def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _Ret:
         # Separate out the tuning parameters from the user's kwargs
         # Whether to return the compile arguments (out_idx, target, target_host, etc.) for autotuner cache

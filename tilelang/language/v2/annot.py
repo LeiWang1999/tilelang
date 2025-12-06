@@ -356,17 +356,6 @@ class BufferAnnot(Annot):
             buf = buffer(shape, self.dtype, strides=strides, scope=self.scope)
             return TIRAnnot(data=buf)
 
-    # def __repr__(self):
-    #     items = []
-    #     if self.shape is not None:
-    #         items.append(f'shape=[{', '.join(map(repr, self.shape))}]')
-    #     if self.strides is not None:
-    #         items.append(f'strides=[{', '.join(map(repr, self.strides))}]')
-    #     if self.dtype is not None:
-    #         items.append(f'dtype={self.dtype}')
-    #     items.append(f'scope={repr(self.scope)}')
-    #     return 'Buffer(' + ', '.join(items) + ')'
-
 
 class TensorAnnot(BufferAnnot):
 

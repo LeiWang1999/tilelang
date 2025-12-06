@@ -629,13 +629,6 @@ class Builder(BaseBuilder):
 
     def prim_func_arg(self, name, value):
         return self.func_annot.create_argument(name, value, self.arg_vt)
-        # if isinstance(value, (Buffer, Var)):
-        #     return tir.arg(name, value)
-        # elif value is self.empty:
-        #     raise ValueError(f'Argument `{name}` is not annotated')
-        # else:
-        #     raise TypeError(
-        #         f"Unsupported argument type: {value}({type(value)}) for argument `{name}`.")
 
     def arg(self, name, value):
         if self.find_frame_idx(MacroFrame) is not None:
