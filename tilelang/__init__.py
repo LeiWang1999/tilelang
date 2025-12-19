@@ -115,7 +115,7 @@ def _load_tile_lang_lib():
     lib_name = "tilelang" if tvm.base._RUNTIME_ONLY else "tilelang_module"
     # pylint: enable=protected-access
     lib_path = libinfo.find_lib_path(lib_name)
-    return ctypes.CDLL(lib_path), lib_path
+    return ctypes.CDLL(lib_path, os.RTLD_LAZY), lib_path
 
 
 # only load once here

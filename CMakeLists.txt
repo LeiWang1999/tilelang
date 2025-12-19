@@ -330,3 +330,34 @@ install(
   TARGETS tvm tvm_runtime tilelang_module tilelang
   LIBRARY DESTINATION tilelang/lib
 )
+
+# Remove CUDA driver stub dependencies from built libraries
+# libcuda.so is provided by the NVIDIA driver at runtime, not the CUDA toolkit.
+# Removing this DT_NEEDED entry allows the libraries to be loaded on systems
+# without CUDA installed, deferring the driver lookup to runtime via dlopen.
+# Pattern uses CMake regex syntax (e.g., "^libcuda\\.so" matches libcuda.so*)
+set(TILELANG_REMOVE_NEEDED_PATTERN "^libcuda\\.so" CACHE STRING
+  "Regex pattern for DT_NEEDED entries to remove (CMake regex syntax)")
+
+if(UNIX AND NOT APPLE AND USE_CUDA AND TILELANG_REMOVE_NEEDED_PATTERN)
+  find_program(PATCHELF_EXECUTABLE patchelf)
+  if(PATCHELF_EXECUTABLE)
+    message(STATUS "Found patchelf: ${PATCHELF_EXECUTABLE}")
+    message(STATUS "Will remove libraries matching: ${TILELANG_REMOVE_NEEDED_PATTERN}")
+
+    set(REMOVE_NEEDED_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/remove_needed.cmake")
+    foreach(target tilelang tilelang_module tilelang_cython_wrapper tvm tvm_runtime)
+      add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+          -DLIBRARY=$<TARGET_FILE:${target}>
+          "-DPATTERN=${TILELANG_REMOVE_NEEDED_PATTERN}"
+          -DPATCHELF=${PATCHELF_EXECUTABLE}
+          -P ${REMOVE_NEEDED_SCRIPT}
+        COMMENT "Removing matching DT_NEEDED entries from ${target}"
+      )
+    endforeach()
+  else()
+    message(WARNING "patchelf not found - DT_NEEDED entries will not be removed. "
+                    "Install patchelf or set PATCHELF_EXECUTABLE to enable this feature.")
+  endif()
+endif()
