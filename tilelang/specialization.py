@@ -13,6 +13,16 @@ class SpecializationError(ValueError):
     """Raised when a specialization spec is invalid or cannot be evaluated."""
 
 
+_COMPARISON_OPS: dict[str, Callable[[Any, Any], bool]] = {
+    "eq": operator.eq,
+    "ne": operator.ne,
+    "lt": operator.lt,
+    "le": operator.le,
+    "gt": operator.gt,
+    "ge": operator.ge,
+}
+
+
 def _coerce_scalar(value: Any) -> Any:
     item = getattr(value, "item", None)
     if callable(item):
@@ -173,27 +183,12 @@ class ComparisonExpr(MetadataExpr):
     lhs: MetadataExpr
     rhs: MetadataExpr
 
-    _OPS: dict[str, Callable[[Any, Any], bool]] = None  # type: ignore[assignment]
-
     def __post_init__(self) -> None:
-        if self._OPS is None:
-            object.__setattr__(
-                self,
-                "_OPS",
-                {
-                    "eq": operator.eq,
-                    "ne": operator.ne,
-                    "lt": operator.lt,
-                    "le": operator.le,
-                    "gt": operator.gt,
-                    "ge": operator.ge,
-                },
-            )
-        if self.op_name not in self._OPS:
+        if self.op_name not in _COMPARISON_OPS:
             raise SpecializationError(f"Unsupported requirement operator: {self.op_name}")
 
     def evaluate(self, arguments: Mapping[str, Any]) -> bool:
-        return bool(self._OPS[self.op_name](self.lhs.evaluate(arguments), self.rhs.evaluate(arguments)))
+        return bool(_COMPARISON_OPS[self.op_name](self.lhs.evaluate(arguments), self.rhs.evaluate(arguments)))
 
     def referenced_args(self) -> set[str]:
         return self.lhs.referenced_args() | self.rhs.referenced_args()
