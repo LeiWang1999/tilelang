@@ -36,8 +36,8 @@ public:
     Array<Stmt> prologue_stmts;
     Array<Stmt> epilogue_stmts;
     for (const auto &desc_init : substituter.desc_inits_) {
-      if (!desc_init.emitted) {
-        prologue_stmts.push_back(desc_init.stmt);
+      if (!desc_init.init_emitted) {
+        prologue_stmts.push_back(desc_init.init_stmt);
       }
     }
     f = WithAttr(std::move(f), "tma_descriptor_args",
@@ -141,10 +141,16 @@ public:
       return;
     }
     for (auto &desc_init : desc_inits_) {
-      if (!desc_init.emitted &&
-          desc_init.base_var == alloc->buffer->data.get()) {
-        result->push_back(desc_init.stmt);
-        desc_init.emitted = true;
+      if (!desc_init.init_emitted &&
+          desc_init.base_var.same_as(alloc->buffer->data)) {
+        result->push_back(desc_init.init_stmt);
+        desc_init.init_emitted = true;
+        if (current_prefetch_condition_.defined() &&
+            !desc_init.prefetch_emitted) {
+          result->push_back(MakePrefetchStmt(
+              desc_init.prefetch_stmt, current_prefetch_condition_.value()));
+          desc_init.prefetch_emitted = true;
+        }
       }
     }
   }
@@ -153,24 +159,28 @@ public:
     if (op->attr_key == tirx::attr::thread_extent) {
       IterVar iv = Downcast<IterVar>(op->node);
       if (iv->thread_tag == "threadIdx.x") {
+        PrimExpr condition = MakePrefetchCondition(iv);
+        Optional<PrimExpr> old_prefetch_condition = current_prefetch_condition_;
+        current_prefetch_condition_ = condition;
         auto body = StmtExprMutator::VisitStmt(op->body);
-        if (prefetch_calls_.empty()) {
+        current_prefetch_condition_ = old_prefetch_condition;
+        Array<Stmt> pending_prefetches;
+        for (auto &desc_init : desc_inits_) {
+          if (!desc_init.prefetch_emitted) {
+            pending_prefetches.push_back(desc_init.prefetch_stmt);
+            desc_init.prefetch_emitted = true;
+          }
+        }
+        if (pending_prefetches.empty()) {
           return AttrStmt(op->node, op->attr_key, op->value, body);
         } else {
           Array<Stmt> stmt_seq;
-          PrimExpr condition;
-          if (!disable_shuffle_elect_) {
-            condition = Call(DataType::Bool(), tl_shuffle_elect(), {0});
-          } else {
-            condition = EQ(iv->var, 0);
-          }
-          auto stmts = prefetch_calls_;
-          auto stmt_ = IfThenElse(condition,
-                                  stmts.size() > 1 ? SeqStmt(stmts) : stmts[0]);
-          stmt_seq.push_back(stmt_);
+          stmt_seq.push_back(MakePrefetchStmt(pending_prefetches.size() > 1
+                                                  ? SeqStmt(pending_prefetches)
+                                                  : pending_prefetches[0],
+                                              condition));
           stmt_seq.push_back(body);
           Stmt result = SeqStmt(stmt_seq);
-          prefetch_calls_.clear();
           return AttrStmt(op->node, op->attr_key, op->value, result);
         }
       }
@@ -193,11 +203,12 @@ public:
         desc_map_[call_ref] = var;
         Array<PrimExpr> init_desc_args = MakeInitDescArgs(call_ref, var);
         init_desc_arg_map_.Set(var, init_desc_args);
-        desc_inits_.push_back({call->args[2].as<Var>().value().get(),
-                               MakeInitDescStmt(var, init_desc_args), false});
-        prefetch_calls_.push_back(
-            Evaluate(Call(DataType::Handle(), builtin::call_extern(),
-                          {StringImm("tl::prefetch_tma_descriptor"), var})));
+        desc_inits_.push_back(
+            {call->args[2].as<Var>().value(),
+             MakeInitDescStmt(var, init_desc_args),
+             Evaluate(Call(DataType::Handle(), builtin::call_extern(),
+                           {StringImm("tl::prefetch_tma_descriptor"), var})),
+             false, false});
       }
       return var;
     } else {
@@ -231,10 +242,24 @@ public:
 
 private:
   struct DescInit {
-    const VarNode *base_var;
-    Stmt stmt;
-    bool emitted;
+    Var base_var;
+    Stmt init_stmt;
+    Stmt prefetch_stmt;
+    bool init_emitted;
+    bool prefetch_emitted;
   };
+
+  PrimExpr MakePrefetchCondition(const IterVar &iv) const {
+    if (!disable_shuffle_elect_) {
+      return Call(DataType::Bool(), tl_shuffle_elect(), {0});
+    }
+    return EQ(iv->var, 0);
+  }
+
+  static Stmt MakePrefetchStmt(const Stmt &prefetch_stmt,
+                               const PrimExpr &condition) {
+    return IfThenElse(condition, prefetch_stmt);
+  }
 
   static Array<PrimExpr> MakeInitDescArgs(const Call &call, const Var &var) {
     Array<PrimExpr> init_desc_args;
@@ -261,10 +286,10 @@ private:
     return SeqStmt({tirx::Bind(var, alloc_desc), Evaluate(init_desc)});
   }
 
-  Array<Stmt> prefetch_calls_;
   std::unordered_map<Call, Var, StructuralHash, ExprDeepEqual> desc_map_;
   std::vector<DescInit> desc_inits_;
   Map<Var, Array<PrimExpr>> init_desc_arg_map_;
+  Optional<PrimExpr> current_prefetch_condition_;
   LowerHopperIntrin(bool disable_shuffle_elect)
       : disable_shuffle_elect_(disable_shuffle_elect) {}
   bool disable_shuffle_elect_;
