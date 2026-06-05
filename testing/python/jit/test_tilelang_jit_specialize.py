@@ -16,6 +16,14 @@ class TensorLike:
     def __init__(self, *shape):
         self.shape = shape
 
+    def stride(self):
+        strides = []
+        current = 1
+        for size in reversed(self.shape):
+            strides.append(current)
+            current *= size
+        return tuple(reversed(strides))
+
 
 class FakeKernel:
 
@@ -43,6 +51,24 @@ def _specialized_lazy_kernel():
             T.evaluate(block_m + block_n)
 
         return main
+
+    return kernel
+
+
+def _specialized_eager_kernel():
+    m = tilelang.arg("A").shape[0]
+
+    @tilelang.jit
+    @tilelang.specialize(
+        block_m=tilelang.bucket(m, [16, 64, 128], policy="ceil", overflow="error"),
+        require=[m > 0],
+        compile="on_miss",
+    )
+    def kernel(A, *, block_m):
+        M, N = T.const("M, N")
+        A: T.Tensor((M, N), T.float32)
+        with T.Kernel(1, threads=1):
+            T.evaluate(block_m + N)
 
     return kernel
 
@@ -223,6 +249,43 @@ def test_specialized_cache_reuses_identical_phase2_compile_inputs(monkeypatch, n
     second = kernel(TensorLike(2, 8))
 
     assert first is second
+    assert len(compile_kwargs) == 1
+    assert len(kernel._kernel_cache) == 1
+
+
+def test_specialized_eager_cache_preserves_distinct_phase2_compile_inputs(monkeypatch, no_frontend_cache):
+    compile_kwargs = []
+    kernel = _specialized_eager_kernel()
+
+    def fake_compile(self, *args, **kwargs):
+        compile_kwargs.append(dict(kwargs))
+        return FakeKernel(f"compile-{len(compile_kwargs)}")
+
+    monkeypatch.setattr(JITImpl, "compile", fake_compile)
+
+    first = kernel(TensorLike(1, 8))
+    second = kernel(TensorLike(1, 16))
+
+    assert first[0] != second[0]
+    assert len(compile_kwargs) == 2
+    assert len(kernel._kernel_cache) == 2
+    assert [kwargs["block_m"] for kwargs in compile_kwargs] == [16, 16]
+
+
+def test_specialized_eager_cache_reuses_identical_phase2_compile_inputs(monkeypatch, no_frontend_cache):
+    compile_kwargs = []
+    kernel = _specialized_eager_kernel()
+
+    def fake_compile(self, *args, **kwargs):
+        compile_kwargs.append(dict(kwargs))
+        return FakeKernel(f"compile-{len(compile_kwargs)}")
+
+    monkeypatch.setattr(JITImpl, "compile", fake_compile)
+
+    first = kernel(TensorLike(1, 8))
+    second = kernel(TensorLike(1, 8))
+
+    assert first[0] == second[0]
     assert len(compile_kwargs) == 1
     assert len(kernel._kernel_cache) == 1
 
