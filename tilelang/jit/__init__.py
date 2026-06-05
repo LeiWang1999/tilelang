@@ -495,7 +495,7 @@ class JITImpl(Generic[_P, _KP, _T, _Ret]):
     ) -> tuple:
         if self.specialization is None or specialization_result is None:
             return fallback_key
-        return self.specialization.cache_key_for_call(self.signature, args, kwargs, specialization_result)
+        return self.specialization.cache_key_for_call(self.signature, args, kwargs, specialization_result, fallback_key)
 
     def _load_or_compile_kernel(
         self,

@@ -182,6 +182,51 @@ def test_specialized_jit_reuses_variants_by_bucket(monkeypatch, no_frontend_cach
     assert all("block_m" not in key_part for cache_key in kernel._kernel_cache for key_part in cache_key[:1])
 
 
+def test_specialized_cache_preserves_distinct_phase2_compile_inputs(monkeypatch, no_frontend_cache):
+    compile_kwargs = []
+    kernel = _specialized_lazy_kernel()
+
+    def fake_parse_args(*args, **kwargs):
+        return ((("block_m", kwargs["block_m"]),), ("phase2-n", args[0].shape[1])), {}
+
+    def fake_compile(self, *args, **kwargs):
+        compile_kwargs.append(dict(kwargs))
+        return FakeKernel(f"compile-{len(compile_kwargs)}")
+
+    monkeypatch.setattr(kernel.func, "parse_args", fake_parse_args)
+    monkeypatch.setattr(JITImpl, "compile", fake_compile)
+
+    first = kernel(TensorLike(1, 8))
+    second = kernel(TensorLike(2, 16))
+
+    assert first is not second
+    assert len(compile_kwargs) == 2
+    assert len(kernel._kernel_cache) == 2
+    assert [kwargs["block_m"] for kwargs in compile_kwargs] == [16, 16]
+
+
+def test_specialized_cache_reuses_identical_phase2_compile_inputs(monkeypatch, no_frontend_cache):
+    compile_kwargs = []
+    kernel = _specialized_lazy_kernel()
+
+    def fake_parse_args(*args, **kwargs):
+        return ((("block_m", kwargs["block_m"]),), ("phase2-n", args[0].shape[1])), {}
+
+    def fake_compile(self, *args, **kwargs):
+        compile_kwargs.append(dict(kwargs))
+        return FakeKernel(f"compile-{len(compile_kwargs)}")
+
+    monkeypatch.setattr(kernel.func, "parse_args", fake_parse_args)
+    monkeypatch.setattr(JITImpl, "compile", fake_compile)
+
+    first = kernel(TensorLike(1, 8))
+    second = kernel(TensorLike(2, 8))
+
+    assert first is second
+    assert len(compile_kwargs) == 1
+    assert len(kernel._kernel_cache) == 1
+
+
 def test_specialization_rejects_conflicting_user_compile_kwarg(monkeypatch, no_frontend_cache):
     kernel = _specialized_lazy_kernel()
 

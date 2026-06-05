@@ -159,6 +159,14 @@ class ShapeExpr(MetadataExpr):
         return self.source.referenced_args()
 
 
+def _shape_refs_from_expr(expr: MetadataExpr) -> set[tuple[str, int]]:
+    if isinstance(expr, ShapeExpr):
+        return {(expr.source.name, expr.index)}
+    if isinstance(expr, ComparisonExpr):
+        return _shape_refs_from_expr(expr.lhs) | _shape_refs_from_expr(expr.rhs)
+    return set()
+
+
 @dataclass(frozen=True, eq=False)
 class ComparisonExpr(MetadataExpr):
     op_name: str
@@ -306,6 +314,15 @@ class SpecializationSpec:
             refs.update(requirement.referenced_args())
         return frozenset(refs)
 
+    def selector_shape_refs(self) -> dict[str, frozenset[int]]:
+        refs: dict[str, set[int]] = {}
+        for _, value in self.fields:
+            if not isinstance(value, BucketSelector):
+                continue
+            for arg_name, index in _shape_refs_from_expr(value.expr):
+                refs.setdefault(arg_name, set()).add(index)
+        return {name: frozenset(indexes) for name, indexes in refs.items()}
+
     def bind_arguments(
         self,
         signature: inspect.Signature,
@@ -348,17 +365,38 @@ class SpecializationSpec:
         args: tuple[Any, ...],
         kwargs: Mapping[str, Any],
         result: SpecializationResult,
+        fallback_key: tuple,
     ) -> tuple[Any, ...]:
-        bound = self.bind_arguments(signature, args, kwargs)
-        ignored = self.referenced_args() | self.field_names
-        stable_inputs = []
-        for name, value in bound.arguments.items():
-            if name in ignored:
-                continue
+        selector_shape_refs = self.selector_shape_refs()
+
+        def normalize(value: Any, arg_name: str | None = None) -> Any:
+            value = _coerce_scalar(value)
+            if _looks_like_runtime_tensor(value):
+                shape = getattr(value, "shape", None)
+                if shape is None:
+                    return ("runtime_tensor", type(value).__module__, type(value).__qualname__)
+                generalized_dims = selector_shape_refs.get(arg_name or "", frozenset())
+                normalized_shape = []
+                for index, dim in enumerate(shape):
+                    if index in generalized_dims:
+                        normalized_shape.append(("specialized_shape_dim", index))
+                    else:
+                        normalized_shape.append(normalize(dim))
+                return ("runtime_tensor", type(value).__module__, type(value).__qualname__, tuple(normalized_shape))
+            if isinstance(value, tuple):
+                if all(isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str) for item in value):
+                    return tuple((name, normalize(item_value, name)) for name, item_value in value)
+                return tuple(normalize(item) for item in value)
+            if isinstance(value, list):
+                return tuple(normalize(item) for item in value)
+            if isinstance(value, dict):
+                return tuple((str(name), normalize(item_value, str(name))) for name, item_value in sorted(value.items(), key=lambda item: str(item[0])))
             cached = _cache_value(value)
             if cached is not None:
-                stable_inputs.append((name, cached))
-        return ("specialization", tuple(sorted(stable_inputs)), result.cache_key)
+                return cached
+            return repr(value)
+
+        return ("specialization", normalize(fallback_key), result.cache_key)
 
 
 def arg(name: str) -> ArgExpr:
