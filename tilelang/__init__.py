@@ -98,6 +98,7 @@ def _init_logger():
 
 
 from .env import env as env  # noqa: F401
+from .specialization import arg, bucket, specialize  # noqa: F401
 
 # Skip logger initialization in light import mode
 if not env.is_light_import():

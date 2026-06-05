@@ -37,6 +37,7 @@ programming_guides/control_flow
 programming_guides/software_pipeline
 programming_guides/python_compatibility
 programming_guides/autotuning
+programming_guides/shape_guided_specialization
 programming_guides/type_system
 :::
 

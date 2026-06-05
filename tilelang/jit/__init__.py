@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import inspect
+import threading
 from typing import (
     Any,
     Generic,
@@ -28,6 +29,7 @@ from tilelang.cache import cached
 from os import path, makedirs
 from logging import getLogger
 from tilelang.jit.param import Kernel
+from tilelang.specialization import SpecializationResult, SpecializationSpec, get_specialization_spec
 import concurrent.futures
 
 from tqdm.auto import tqdm
@@ -287,6 +289,7 @@ class JITImpl(Generic[_P, _KP, _T, _Ret]):
     func_source: str
     signature: inspect.Signature
     mode: Literal["auto", "lazy", "eager"]
+    specialization: SpecializationSpec | None
     # place func at the last element for better __repr__
     func: JITFunc[_KP, _T]
 
@@ -299,6 +302,16 @@ class JITImpl(Generic[_P, _KP, _T, _Ret]):
                 self.debug_root_path = path.abspath(self.debug_root_path)
         self._kernel_cache: dict[tuple, Kernel] = {}
         self._tuner_cache: dict[tuple, Kernel] = {}
+        self._compile_locks: dict[tuple, threading.Lock] = {}
+        self._compile_locks_guard = threading.Lock()
+
+    def _compile_lock_for_key(self, key: tuple) -> threading.Lock:
+        with self._compile_locks_guard:
+            lock = self._compile_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._compile_locks[key] = lock
+            return lock
 
     def get_tir(self, *args: _P.args, **kwargs: _P.kwargs) -> PrimFunc[_KP, _T]:
         """
@@ -427,11 +440,15 @@ class JITImpl(Generic[_P, _KP, _T, _Ret]):
         key = (key_args_tuple, key_kwargs_tuple, tuned_key_kwargs_tuple)
         return key
 
-    def _frontend_cache_key_data(self, key: tuple) -> dict[str, Any]:
+    def _frontend_cache_key_data(
+        self,
+        key: tuple,
+        specialization_result: SpecializationResult | None = None,
+    ) -> dict[str, Any]:
         func_name = getattr(getattr(self.func, "orig_func", self.func), "__name__", "jit_kernel")
         func_qualname = getattr(getattr(self.func, "orig_func", self.func), "__qualname__", func_name)
         func_module = getattr(getattr(self.func, "orig_func", self.func), "__module__", None)
-        return {
+        data = {
             "function": func_name,
             "qualname": func_qualname,
             "module": func_module,
@@ -440,12 +457,101 @@ class JITImpl(Generic[_P, _KP, _T, _Ret]):
             "key": repr(key),
             "mode": self.mode,
         }
+        if specialization_result is not None:
+            # Specialized lazy variants use the normal frontend cache path; the
+            # selected variant config is explicit frontend metadata.
+            data["specialization"] = specialization_result.cache_key
+        return data
+
+    def _apply_specialization(
+        self,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> tuple[dict[str, Any], SpecializationResult | None]:
+        if self.specialization is None:
+            return kwargs, None
+
+        explicit_bound = self.signature.bind_partial(*args, **kwargs)
+        result, _ = self.specialization.evaluate_call(self.signature, args, kwargs)
+        merged_kwargs = dict(kwargs)
+        for name, selected_value in result.as_kwargs.items():
+            if name in explicit_bound.arguments:
+                provided_value = explicit_bound.arguments[name]
+                if provided_value != selected_value:
+                    raise ValueError(
+                        f"Specialization selected `{name}={selected_value}`, "
+                        f"but the call provided `{name}={provided_value}`"
+                    )
+            else:
+                merged_kwargs[name] = selected_value
+        return merged_kwargs, result
+
+    def _specialized_cache_key(
+        self,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        specialization_result: SpecializationResult | None,
+        fallback_key: tuple,
+    ) -> tuple:
+        if self.specialization is None or specialization_result is None:
+            return fallback_key
+        return self.specialization.cache_key_for_call(self.signature, args, kwargs, specialization_result)
+
+    def _load_or_compile_kernel(
+        self,
+        key: tuple,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        kernel_args: dict[str, Any],
+        specialization_result: SpecializationResult | None,
+    ) -> Kernel:
+        frontend_key_data = None
+        # Frontend cache is only safe when lazy-mode parse_args leaves no
+        # runtime kernel_args; then _frontend_cache_key_data fully identifies
+        # the compiled kernel, assuming compile-time values have stable reprs.
+        if self.mode == "lazy" and not kernel_args:
+            frontend_key_data = self._frontend_cache_key_data(key, specialization_result)
+            from tilelang.cache import load_frontend_cached
+
+            kernel = load_frontend_cached(
+                frontend_key_data,
+                out_idx=self.out_idx,
+                execution_backend=self.execution_backend,
+                target=self.target,
+                target_host=self.target_host,
+                verbose=self.verbose,
+                pass_configs=self.pass_configs,
+                compile_flags=self.compile_flags,
+            )
+            if kernel is not None:
+                return kernel
+
+        kernel = self.compile(*args, **kwargs)
+        if frontend_key_data is not None:
+            kernel_key = getattr(kernel, "_tilelang_cache_key", None)
+            if kernel_key:
+                from tilelang.cache import store_frontend_cache
+
+                store_frontend_cache(
+                    frontend_key_data,
+                    kernel_key,
+                    out_idx=self.out_idx,
+                    execution_backend=self.execution_backend,
+                    target=self.target,
+                    target_host=self.target_host,
+                    verbose=self.verbose,
+                    pass_configs=self.pass_configs,
+                    compile_flags=self.compile_flags,
+                )
+        return kernel
 
     def get_kernel_source(self, *args: _P.args, **kwargs: _P.kwargs) -> str:
         kernel = self.compile(*args, **kwargs)
         return kernel.get_kernel_source()
 
     def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _Ret:
+        args_tuple = tuple(args)
+        kwargs = dict(kwargs)
         # Separate out the tuning parameters from the user's kwargs
         # Whether to return the compile arguments (out_idx, target, target_host, etc.) for autotuner cache
         return_compile_arguments = kwargs.pop("__return_compile_arguments", False)
@@ -463,52 +569,26 @@ class JITImpl(Generic[_P, _KP, _T, _Ret]):
             return compile_args
 
         kwargs.update(kwargs.pop("__tune_params", {}))
+        kwargs, specialization_result = self._apply_specialization(args_tuple, kwargs)
 
         # infer mode early, before parse_args needs it
         if self.mode == "auto":
-            self.mode = self._infer_jit_mode(*args, **kwargs)
+            self.mode = self._infer_jit_mode(*args_tuple, **kwargs)
             self.func.set_mode(self.mode)
 
-        key, kernel_args = self.func.parse_args(*args, **kwargs)
+        key, kernel_args = self.func.parse_args(*args_tuple, **kwargs)
+        key = self._specialized_cache_key(args_tuple, kwargs, specialization_result, key)
         kernel = self._kernel_cache.get(key, None)
         if kernel is None:
-            frontend_key_data = None
-            # Frontend cache is only safe when lazy-mode parse_args leaves no
-            # runtime kernel_args; then _frontend_cache_key_data fully identifies
-            # the compiled kernel, assuming compile-time values have stable reprs.
-            if self.mode == "lazy" and not kernel_args:
-                frontend_key_data = self._frontend_cache_key_data(key)
-                from tilelang.cache import load_frontend_cached
-
-                kernel = load_frontend_cached(
-                    frontend_key_data,
-                    out_idx=self.out_idx,
-                    execution_backend=self.execution_backend,
-                    target=self.target,
-                    target_host=self.target_host,
-                    verbose=self.verbose,
-                    pass_configs=self.pass_configs,
-                    compile_flags=self.compile_flags,
-                )
-            if kernel is None:
-                kernel = self.compile(*args, **kwargs)
-                if frontend_key_data is not None:
-                    kernel_key = getattr(kernel, "_tilelang_cache_key", None)
-                    if kernel_key:
-                        from tilelang.cache import store_frontend_cache
-
-                        store_frontend_cache(
-                            frontend_key_data,
-                            kernel_key,
-                            out_idx=self.out_idx,
-                            execution_backend=self.execution_backend,
-                            target=self.target,
-                            target_host=self.target_host,
-                            verbose=self.verbose,
-                            pass_configs=self.pass_configs,
-                            compile_flags=self.compile_flags,
-                        )
-            self._kernel_cache[key] = kernel
+            if specialization_result is None:
+                kernel = self._load_or_compile_kernel(key, args_tuple, kwargs, kernel_args, specialization_result)
+                self._kernel_cache[key] = kernel
+            else:
+                with self._compile_lock_for_key(key):
+                    kernel = self._kernel_cache.get(key, None)
+                    if kernel is None:
+                        kernel = self._load_or_compile_kernel(key, args_tuple, kwargs, kernel_args, specialization_result)
+                        self._kernel_cache[key] = kernel
 
         # eager mode: execute kernel immediately and return result
         # lazy mode: return kernel object for manual invocation
@@ -591,6 +671,7 @@ def jit(
 
     def decorator(func: Callable[_P, _T]):
         mode = "auto"
+        specialization = get_specialization_spec(func)
         pf: JITFunc[_P, _T] = prim_func(func, eager_jit=True)
         func_source = inspect.getsource(pf.orig_func)
         signature = inspect.signature(pf.orig_func)
@@ -601,6 +682,7 @@ def jit(
             func_source=func_source,
             signature=signature,
             mode=mode,
+            specialization=specialization,
         )
 
     return decorator(func) if func is not None else decorator
