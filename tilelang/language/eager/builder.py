@@ -1111,6 +1111,7 @@ class TirTemplate(Generic[_P, _T]):
 
 _MISSING_ARG = object()
 _ExtraJITKwargsKey = tuple[tuple[str, Any], ...]
+_LEGACY_EXTRA_POSITIONAL_ARGS_KEY = "__tilelang_extra_positional_args__"
 
 
 def _freeze_jit_key_part(value: Any) -> Any:
@@ -1197,6 +1198,18 @@ class _JITArgumentBinder:
             bound.apply_defaults()
             return self._pack_no_tensor_key(bound.arguments)
         return self._bind_fast_no_tensor_key(args, kwargs)
+
+    def bind_lazy_no_tensor(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> _BoundJITArgs:
+        if self.tensor_arg_names:
+            raise ValueError("bind_lazy_no_tensor is only valid for JIT functions without tensor arguments")
+        if self.use_signature_bind or len(args) <= self.positional_param_count:
+            return self.bind(args, kwargs)
+
+        compile_args = args[: self.positional_param_count]
+        extra_args = args[self.positional_param_count :]
+        bound = self._bind_fast(compile_args, kwargs)
+        p1_key = bound.p1_key + ((_LEGACY_EXTRA_POSITIONAL_ARGS_KEY, _make_jit_key(extra_args)),)
+        return _BoundJITArgs(p1_key, bound.tensor_args, bound.compile_kwargs)
 
     @staticmethod
     def _extra_key(extra_kwargs: dict[str, Any]) -> _ExtraJITKwargsKey:
@@ -1437,6 +1450,9 @@ class JITFunc(Generic[_P, _T]):
     def parse_args(self, *args, **kwargs):
         """Parse arguments and return cache key and tensor args."""
         if not self.tensor_args:
+            if self.mode == "lazy":
+                bound = self._argument_binder.bind_lazy_no_tensor(args, kwargs)
+                return (bound.p1_key, None), {}
             p1_key = self._argument_binder.bind_no_tensor_key(args, kwargs)
             return (p1_key, None), {}
 
@@ -1450,7 +1466,10 @@ class JITFunc(Generic[_P, _T]):
         return (bound.p1_key, p2_key), bound.tensor_args
 
     def get_tir(self, *args, **kwargs):
-        bound = self._argument_binder.bind(args, kwargs)
+        if not self.tensor_args and self.mode == "lazy":
+            bound = self._argument_binder.bind_lazy_no_tensor(args, kwargs)
+        else:
+            bound = self._argument_binder.bind(args, kwargs)
         if bound.p1_key not in self.p1_cache:
             # in legacy gemm, we use lazy tir template to build the tir
             self.p1_cache[bound.p1_key] = self._build_tir_template(**bound.compile_kwargs)
